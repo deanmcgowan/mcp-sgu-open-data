@@ -21,6 +21,7 @@ os.environ.setdefault("MAX_EXPORT_RECORDS", "1000")
 def reset_settings_singleton() -> Generator[None, None, None]:
     """Reset the settings singleton between tests."""
     import mcp_sgu.config as cfg_module
+
     original = cfg_module._settings
     cfg_module._settings = None
     yield
@@ -31,6 +32,7 @@ def reset_settings_singleton() -> Generator[None, None, None]:
 def reset_sgu_client() -> Generator[None, None, None]:
     """Reset the SGU client singleton between tests."""
     import mcp_sgu.sgu_client as sgu_module
+
     original = sgu_module._client
     sgu_module._client = None
     yield
@@ -41,6 +43,7 @@ def reset_sgu_client() -> Generator[None, None, None]:
 def reset_caches() -> Generator[None, None, None]:
     """Reset all in-memory caches between tests."""
     import mcp_sgu.cache as cache_module
+
     cache_module._metadata_cache = None
     cache_module._address_cache = None
     cache_module._results_cache = None
@@ -65,6 +68,7 @@ def auth_headers(test_token: str) -> dict[str, str]:
 def app():
     """Create a fresh Starlette test application."""
     from mcp_sgu.app import create_app
+
     return create_app()
 
 
@@ -76,26 +80,23 @@ def sample_well_feature() -> dict:
         "id": "brunnar.123",
         "geometry": {
             "type": "Point",
-            "coordinates": [18.0686, 59.3293],  # Stockholm area
+            "coordinates": [674032.357, 6580821.991],
         },
         "properties": {
             "brunnsid": 123,
             "obsplatsid": "OBS-456",
             "kommunkod": "0180",
             "kommunnamn": "Stockholm",
-            "lanskod": "01",
-            "lansnamn": "Stockholms län",
+            "n": 6580821.991,
+            "e": 674032.357,
             "kapacitet": 3000.0,
             "totaldjup": 80.5,
-            "borrdjup": 75.0,
-            "vattenniva": 5.2,
-            "borrningsstart": "2010-06-15",
-            "borrningsslut": "2010-06-20",
-            "anvandningskod": "V",
+            "grundvattenniva": 5.2,
+            "borrdatum": "2010-06-15",
+            "anvandning_kod": "HUS",
             "anvandning": "Vattenförsörjning",
-            "positionskvalitetskod": "1",
-            "positionskvalitet": "GPS-koordinat",
-            "brunnotyp": "Bergborrad",
+            "posvardering_kod": "0",
+            "posvardering": "Maxfel <100 m",
         },
     }
 
@@ -111,11 +112,10 @@ def sample_layer_feature() -> dict:
             "brunnsid": 123,
             "obsplatsid": "OBS-456",
             "lagernr": 1,
-            "startdjup": 0.0,
-            "slutdjup": 5.0,
-            "jordart": "Morän",
-            "bergart": None,
-            "lagernotering": "Löst material",
+            "djup_fran": 0.0,
+            "djup_till": 5.0,
+            "jordart_bergart": "Morän",
+            "lageranmarkning": "Löst material",
         },
     }
 

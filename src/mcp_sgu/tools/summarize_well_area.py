@@ -7,11 +7,8 @@ import statistics
 from collections import Counter
 from typing import Any
 
-from mcp_sgu.coordinates import (
-    feature_coordinates,
-    haversine_distance_m,
-    radius_to_bbox,
-)
+from mcp_sgu.coordinates import feature_coordinates, haversine_distance_m, wgs84_radius_to_sweref_bbox
+from mcp_sgu.filters import FilterError, add_filter, build_well_filter
 from mcp_sgu.geocoding import GeocodingError, geocode_address
 from mcp_sgu.logging_config import get_logger, set_tool_name
 from mcp_sgu.sgu_client import SGUError, get_sgu_client
@@ -54,19 +51,18 @@ async def summarize_well_area(
     set_tool_name("summarize_well_area")
 
     # Require at least one spatial constraint
-    has_spatial = any([
-        address,
-        (latitude is not None and longitude is not None and radius_m),
-        bbox,
-        municipality_code,
-        municipality_name,
-    ])
+    has_spatial = any(
+        [
+            (latitude is not None and longitude is not None and radius_m),
+            bbox,
+        ]
+    )
     if not has_spatial:
         return {
             "error": "missing_spatial_constraint",
             "detail": (
                 "A spatial constraint is required. Provide one of: address+radius_m, "
-                "latitude+longitude+radius_m, bbox, municipality_code, or municipality_name."
+                "latitude+longitude+radius_m or bbox. Address requires radius_m."
             ),
         }
 
@@ -74,6 +70,8 @@ async def summarize_well_area(
     resolved_lon = longitude
 
     if address:
+        if radius_m is None:
+            return {"error": "missing_radius", "detail": "address requires radius_m."}
         try:
             geo = await geocode_address(address)
             resolved_lat = geo["latitude"]
@@ -84,34 +82,28 @@ async def summarize_well_area(
     params: dict[str, Any] = {}
 
     if radius_m and resolved_lat is not None and resolved_lon is not None:
-        min_lon, min_lat, max_lon, max_lat = radius_to_bbox(resolved_lat, resolved_lon, radius_m)
-        params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+        params["bbox"] = ",".join(map(str, wgs84_radius_to_sweref_bbox(resolved_lat, resolved_lon, radius_m)))
     elif bbox:
         params["bbox"] = ",".join(str(v) for v in bbox)
 
-    cql_parts: list[str] = []
-    if municipality_code:
-        cql_parts.append(f"kommunkod='{municipality_code}'")
-    if municipality_name:
-        cql_parts.append(f"kommunnamn ILIKE '%{municipality_name}%'")
-    if cql_parts:
-        params["filter"] = " AND ".join(cql_parts)
-        params["filter-lang"] = "cql2-text"
+    try:
+        add_filter(params, build_well_filter(municipality_code=municipality_code, municipality_name=municipality_name))
+    except FilterError as exc:
+        return {"error": "invalid_filter", "detail": str(exc)}
 
     params["limit"] = _MAX_SCAN
 
     client = get_sgu_client()
     try:
-        features, meta = await client.get_items(
-            _COLLECTION, params, max_records=_MAX_SCAN
-        )
+        features, meta = await client.get_items(_COLLECTION, params, max_records=_MAX_SCAN)
     except SGUError as exc:
         return {"error": "sgu_unavailable", "detail": str(exc)}
 
     # Exact radius filtering
     if radius_m and resolved_lat is not None and resolved_lon is not None:
         features = [
-            f for f in features
+            f
+            for f in features
             if (coord := feature_coordinates(f)) is not None
             and haversine_distance_m(resolved_lat, resolved_lon, coord[0], coord[1]) <= radius_m
         ]
@@ -130,7 +122,6 @@ async def summarize_well_area(
     pos_quality_counter: Counter = Counter()
     depths: list[float] = []
     capacities: list[float] = []
-    wells_with_layers = 0
     wells_with_water_level = 0
     missing_depth = 0
     missing_capacity = 0
@@ -139,10 +130,10 @@ async def summarize_well_area(
     for f in features:
         props = f.get("properties") or {}
 
-        use_code = props.get("anvandningskod") or "unknown"
+        use_code = props.get("anvandning_kod") or "unknown"
         use_counter[use_code] += 1
 
-        pq = props.get("positionskvalitetskod") or "unknown"
+        pq = props.get("posvardering_kod") or "unknown"
         pos_quality_counter[pq] += 1
 
         depth = props.get("totaldjup")
@@ -157,11 +148,8 @@ async def summarize_well_area(
         else:
             missing_capacity += 1
 
-        if props.get("vattenniva") is not None:
+        if props.get("grundvattenniva") is not None:
             wells_with_water_level += 1
-
-        if f.get("_has_layers"):
-            wells_with_layers += 1
 
         geom = f.get("geometry")
         if not geom:
@@ -181,8 +169,7 @@ async def summarize_well_area(
     warnings: list[str] = []
     if meta.get("_truncated"):
         warnings.append(
-            f"Statistics are based on a maximum of {_MAX_SCAN} records; "
-            "the actual area may contain more wells."
+            f"Statistics are based on a maximum of {_MAX_SCAN} records; the actual area may contain more wells."
         )
 
     return {
@@ -197,12 +184,14 @@ async def summarize_well_area(
         },
         "retrieval_timestamp": _now_iso(),
         "total_well_count": total,
+        "records_scanned": len(features),
+        "complete": not bool(meta.get("_truncated") or _has_next_link(meta.get("links", []))),
         "well_use_distribution": dict(use_counter.most_common()),
         "position_quality_distribution": dict(pos_quality_counter.most_common()),
         "depth_statistics_m": _stats(depths),
         "capacity_statistics_l_h": _stats(capacities),
         "wells_with_water_level_data": wells_with_water_level,
-        "wells_with_layer_data": wells_with_layers,
+        "wells_with_layer_data": "unknown; layer availability was not checked",
         "missing_values": {
             "depth": missing_depth,
             "capacity": missing_capacity,
@@ -218,3 +207,8 @@ async def summarize_well_area(
 
 def _now_iso() -> str:
     return datetime.datetime.now(tz=datetime.UTC).isoformat()
+
+
+def _has_next_link(links: list[dict[str, Any]]) -> bool:
+    """Return whether SGU supplied another OGC page."""
+    return any(link.get("rel") == "next" for link in links)

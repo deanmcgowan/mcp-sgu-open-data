@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from mcp_sgu.field_defs import FIELD_DEFINITIONS, POSITION_QUALITY_CODES, WELL_USE_CODES
+from mcp_sgu.field_defs import FIELD_DEFINITIONS, POSITION_QUALITY_CODES, SEALING_CODES, WELL_USE_CODES
 from mcp_sgu.logging_config import get_logger, set_tool_name
 from mcp_sgu.sgu_client import SGUError, get_sgu_client
 
@@ -61,29 +61,31 @@ async def get_dataset_metadata() -> dict[str, Any]:
         "base_url": client._base_url,
         "collections": _summarize_collections(collections_data, _COLLECTIONS),
         "queryables": queryables,
-        "supported_formats": ["application/geo+json", "application/json"],
+        "supported_formats": _formats(landing, collections_data),
         "crs": {
-            "native": "EPSG:4326",
-            "description": "WGS84 geographic coordinates (longitude, latitude)",
+            "storage": "EPSG:3006 (SWEREF 99 TM)",
+            "output": "EPSG:4326 (WGS84), transformed by this server",
+            "description": "SGU Brunnar is stored in SWEREF 99 TM (EPSG:3006).",
         },
         "field_definitions": FIELD_DEFINITIONS,
         "code_lists": {
-            "anvandningskod": WELL_USE_CODES,
-            "positionskvalitetskod": POSITION_QUALITY_CODES,
+            "anvandning_kod": WELL_USE_CODES,
+            "posvardering_kod": POSITION_QUALITY_CODES,
+            "tatning_kod": SEALING_CODES,
         },
         "license": {
-            "name": "Creative Commons Attribution (CC BY 4.0)",
-            "url": "https://creativecommons.org/licenses/by/4.0/",
-            "attribution": "Sveriges geologiska undersökning (SGU)",
+            "name": "CC0 1.0 Universal",
+            "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+            "source": "Current SGU Brunnar product documentation",
         },
         "data_quality_notes": [
             "Data completeness varies; many wells lack capacity or depth measurements.",
-            "Position accuracy depends on positionskvalitetskod; some wells have uncertain coordinates.",
+            "Position accuracy depends on posvardering_kod; some wells have uncertain coordinates.",
             "Drilling dates may be partial (year only).",
             "Capacity values reflect reported measurements, not guaranteed sustainable yield.",
         ],
         "sgu_documentation": [
-            "https://resource.sgu.se/oppnadata/brunnar",
+            "https://resource.sgu.se/dokument/produkter/brunnar-beskrivning.pdf",
             "https://api.sgu.se/oppnadata/brunnar/ogc/features/v1",
             "https://www.sgu.se/produkter-och-tjanster/databaser-och-apier/api-brunnsarkivet/",
         ],
@@ -117,14 +119,26 @@ def _summarize_collections(
     # Include any unexpected collections from the API
     for coll in collections:
         if coll.get("id") not in known_ids:
-            summary.append({
-                "id": coll.get("id"),
-                "title": coll.get("title"),
-                "description": coll.get("description"),
-                "note": "Unexpected collection not currently served by this MCP server",
-            })
+            summary.append(
+                {
+                    "id": coll.get("id"),
+                    "title": coll.get("title"),
+                    "description": coll.get("description"),
+                    "note": "Unexpected collection not currently served by this MCP server",
+                }
+            )
 
     return summary
+
+
+def _formats(landing: dict[str, Any], collections: list[dict[str, Any]]) -> list[str]:
+    """Collect advertised response formats when available."""
+    formats = {"application/geo+json", "application/json"}
+    for resource in [landing, *collections]:
+        for link in resource.get("links", []):
+            if link.get("type"):
+                formats.add(link["type"])
+    return sorted(formats)
 
 
 def _now_iso() -> str:

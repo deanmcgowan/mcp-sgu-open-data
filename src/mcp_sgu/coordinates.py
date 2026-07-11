@@ -61,7 +61,11 @@ def radius_to_bbox(lat: float, lon: float, radius_m: float) -> tuple[float, floa
 
 
 def feature_coordinates(feature: dict[str, Any]) -> tuple[float, float] | None:
-    """Extract (lat, lon) from a GeoJSON feature, or None if not available."""
+    """Extract WGS84 ``(lat, lon)`` from a source EPSG:3006 feature."""
+    props = feature.get("properties") or {}
+    if props.get("e") is not None and props.get("n") is not None:
+        lon, lat = sweref99tm_to_wgs84(float(props["e"]), float(props["n"]))
+        return lat, lon
     geometry = feature.get("geometry")
     if not geometry:
         return None
@@ -70,6 +74,31 @@ def feature_coordinates(feature: dict[str, Any]) -> tuple[float, float] | None:
     if not coords:
         return None
     if geom_type == "Point":
-        # GeoJSON: [lon, lat]
-        return float(coords[1]), float(coords[0])
+        lon, lat = sweref99tm_to_wgs84(float(coords[0]), float(coords[1]))
+        return lat, lon
     return None
+
+
+def transform_feature_to_wgs84(feature: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy whose Point geometry is transformed from EPSG:3006 to WGS84."""
+    result = dict(feature)
+    geometry = feature.get("geometry")
+    if not geometry or geometry.get("type") != "Point":
+        return result
+    coords = feature_coordinates(feature)
+    if coords is None:
+        return result
+    lat, lon = coords
+    result["geometry"] = {**geometry, "coordinates": [lon, lat]}
+    return result
+
+
+def wgs84_radius_to_sweref_bbox(lat: float, lon: float, radius_m: float) -> tuple[float, float, float, float]:
+    """Convert a conservative WGS84 radius bounding box to source EPSG:3006."""
+    min_lon, min_lat, max_lon, max_lat = radius_to_bbox(lat, lon, radius_m)
+    corners = [
+        wgs84_to_sweref99tm(x, y)
+        for x, y in ((min_lon, min_lat), (min_lon, max_lat), (max_lon, min_lat), (max_lon, max_lat))
+    ]
+    eastings, northings = zip(*corners, strict=True)
+    return min(eastings), min(northings), max(eastings), max(northings)

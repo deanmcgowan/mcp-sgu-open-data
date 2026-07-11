@@ -2,16 +2,16 @@
 #
 # Usage (from Google Cloud Shell or gcloud CLI):
 #   gcloud builds submit --config cloudbuild.yaml \
-#     --substitutions _REGION=europe-north1,_REPO=sgu-mcp,_SERVICE=sgu-brunnar-mcp .
+#     --substitutions _REGION=europe-north2,_REPO=sgu-mcp,_SERVICE=sgu-brunnar-mcp .
 #
 # Required substitutions (override on the command line or set Cloud Build triggers):
-#   _REGION         — Artifact Registry region (default: europe-north1 = Stockholm)
+#   _REGION         — Artifact Registry and Cloud Run region (default: europe-north2 = Stockholm)
 #   _REPO           — Artifact Registry repository name
 #   _SERVICE        — Cloud Run service name
 #   _IMAGE          — (auto-composed) Full image URI
 
 substitutions:
-  _REGION: europe-north1
+  _REGION: europe-north2
   _REPO: sgu-mcp
   _SERVICE: sgu-brunnar-mcp
   _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
@@ -57,7 +57,7 @@ steps:
       - --image=${_IMAGE}:${SHORT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --no-allow-unauthenticated
+      - --allow-unauthenticated
       - --port=8080
       - --min-instances=0
       - --max-instances=3
@@ -65,6 +65,7 @@ steps:
       - --cpu=1
       - --timeout=60
       - --set-env-vars=APP_ENV=production,LOG_LEVEL=INFO
+      - --set-secrets=MCP_BEARER_TOKEN=MCP_BEARER_TOKEN:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,MCP_CONTINUATION_SECRET=MCP_CONTINUATION_SECRET:latest
 
 images:
   - ${_IMAGE}:${SHORT_SHA}

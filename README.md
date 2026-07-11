@@ -199,6 +199,7 @@ Tests use mocked HTTP responses and do **not** require real SGU or Google creden
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `MCP_BEARER_TOKEN` | Yes | — | Auth token that MCP clients must present |
+| `MCP_CONTINUATION_SECRET` | Yes | — | Secret for opaque continuation tokens |
 | `GOOGLE_MAPS_API_KEY` | For geocoding | — | Google Maps / Geocoding API key |
 | `SGU_BASE_URL` | No | `https://api.sgu.se/oppnadata/brunnar/ogc/features/v1` | SGU OGC API base URL |
 | `APP_ENV` | No | `development` | `development` / `staging` / `production` |
@@ -302,7 +303,7 @@ gcloud services enable \
 ```bash
 gcloud artifacts repositories create sgu-mcp \
   --repository-format=docker \
-  --location=europe-north1 \
+  --location=europe-north2 \
   --description="SGU MCP server images"
 ```
 
@@ -310,7 +311,7 @@ gcloud artifacts repositories create sgu-mcp \
 
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions _REGION=europe-north1,_REPO=sgu-mcp,_SERVICE=sgu-brunnar-mcp .
+  --substitutions _REGION=europe-north2,_REPO=sgu-mcp,_SERVICE=sgu-brunnar-mcp .
 ```
 
 ### 4. Create Secrets
@@ -329,14 +330,14 @@ echo -n "YOUR_GOOGLE_MAPS_API_KEY" | \
 
 ```bash
 PROJECT=$(gcloud config get-value project)
-REGION=europe-north1
+REGION=europe-north2
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/sgu-mcp/sgu-brunnar-mcp:latest"
 
 gcloud run deploy sgu-brunnar-mcp \
   --image="${IMAGE}" \
   --region="${REGION}" \
   --platform=managed \
-  --no-allow-unauthenticated \
+  --allow-unauthenticated \
   --port=8080 \
   --min-instances=0 \
   --max-instances=3 \
@@ -350,7 +351,7 @@ gcloud run deploy sgu-brunnar-mcp \
 
 ```bash
 gcloud run services describe sgu-brunnar-mcp \
-  --region=europe-north1 \
+  --region=europe-north2 \
   --format="value(status.url)"
 ```
 
@@ -358,7 +359,7 @@ gcloud run services describe sgu-brunnar-mcp \
 
 ```bash
 SERVICE_URL=$(gcloud run services describe sgu-brunnar-mcp \
-  --region=europe-north1 --format="value(status.url)")
+  --region=europe-north2 --format="value(status.url)")
 
 curl "${SERVICE_URL}/healthz"
 curl "${SERVICE_URL}/readyz"
@@ -423,11 +424,11 @@ The `create_export` tool:
 ## Data-Quality Limitations
 
 - **Position quality**: Well coordinates vary in accuracy (GPS, map digitising, address-level).
-  Always check `positionskvalitetskod` and `positionskvalitet`.
+  Always check `posvardering_kod` and `posvardering`.
 - **Capacity**: `kapacitet` is the *reported* capacity at the time of drilling, not necessarily
   the current sustainable yield.
-- **Depth**: `borrdjup` and `totaldjup` may differ; some wells have missing depth values.
-- **Groundwater level**: `vattenniva` may reflect conditions at the time of drilling only.
+- **Depth**: `totaldjup` may be missing or approximate.
+- **Groundwater level**: `grundvattenniva` may reflect conditions at the time of drilling only.
 - **Address geocoding**: The returned point is a geocoded address centroid, not a cadastral
   parcel boundary.
 - **Date precision**: Drilling dates may be partial (year only) or absent.
@@ -455,13 +456,12 @@ Candidate future datasets from SGU OGC APIs:
 
 ## Known Limitations
 
-- **Live SGU API not verified in this environment**: The SGU API (`api.sgu.se`) was not
-  reachable from the build environment. Field names and API behaviour are based on the OGC API
-  Features standard and SGU documentation. Field names should be verified against the live API
-  before production use.
+- **Live verification required**: This sandbox cannot reach the SGU API. Run
+  `python scripts/verify_sgu.py` before production deployment to verify queryables, storage CRS,
+  and pagination against the live service.
 - **In-memory state**: Cache and exports are stored in process memory; lost on restart.
 - **No persistent storage**: Export files are not stored in Cloud Storage in this version.
-- **Single region**: Configured for `europe-north1` (Stockholm); other regions require config
+- **Single region**: Configured for `europe-north2` (Stockholm); other regions require config
   changes.
 - **Stateless MCP**: Uses `stateless_http=True` which means no server-side session state is
   maintained between MCP requests.

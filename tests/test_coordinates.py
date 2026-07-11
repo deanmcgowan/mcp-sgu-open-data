@@ -54,14 +54,14 @@ def test_feature_coordinates_point() -> None:
 
     feature = {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [18.07, 59.33]},
-        "properties": {},
+        "geometry": {"type": "Point", "coordinates": [674032.357, 6580821.991]},
+        "properties": {"e": 674032.357, "n": 6580821.991},
     }
     coord = feature_coordinates(feature)
     assert coord is not None
     lat, lon = coord
-    assert lat == pytest.approx(59.33)
-    assert lon == pytest.approx(18.07)
+    assert lat == pytest.approx(59.3293, abs=0.01)
+    assert lon == pytest.approx(18.0686, abs=0.01)
 
 
 def test_feature_coordinates_no_geometry() -> None:

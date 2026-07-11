@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         default="",
         description="****** for MCP endpoint authentication",
     )
+    mcp_continuation_secret: str = Field(
+        default="",
+        description="Secret used to sign opaque continuation tokens",
+    )
 
     # Google Maps
     google_maps_api_key: str = Field(

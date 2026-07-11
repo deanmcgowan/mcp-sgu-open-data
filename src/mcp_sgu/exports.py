@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcp_sgu.config import get_settings
+from mcp_sgu.coordinates import transform_feature_to_wgs84
 from mcp_sgu.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -58,9 +59,7 @@ async def create_export(
     settings = get_settings()
 
     if len(features) > settings.max_export_records:
-        raise ValueError(
-            f"Export size {len(features)} exceeds MAX_EXPORT_RECORDS={settings.max_export_records}"
-        )
+        raise ValueError(f"Export size {len(features)} exceeds MAX_EXPORT_RECORDS={settings.max_export_records}")
 
     if fmt not in ("csv", "geojson"):
         raise ValueError(f"Unsupported export format: {fmt!r}. Use 'csv' or 'geojson'.")
@@ -69,10 +68,11 @@ async def create_export(
     now = time.time()
     expires_at = now + settings.export_ttl_seconds
 
+    output_features = [transform_feature_to_wgs84(feature) for feature in features]
     if fmt == "csv":
-        content = _to_csv(features)
+        content = _to_csv(output_features)
     else:
-        content = _to_geojson(features)
+        content = _to_geojson(output_features)
 
     record = ExportRecord(
         export_id=export_id,
@@ -163,6 +163,7 @@ def _to_geojson(features: list[dict[str, Any]]) -> bytes:
     """Convert features to GeoJSON FeatureCollection bytes."""
     fc = {
         "type": "FeatureCollection",
+        "crs_note": "Coordinates are transformed to EPSG:4326 (WGS84). Source data is EPSG:3006.",
         "features": features,
     }
     return json.dumps(fc, ensure_ascii=False, default=str).encode("utf-8")

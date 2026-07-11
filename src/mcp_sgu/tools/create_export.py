@@ -8,9 +8,10 @@ from typing import Any
 from mcp_sgu.coordinates import (
     feature_coordinates,
     haversine_distance_m,
-    radius_to_bbox,
+    wgs84_radius_to_sweref_bbox,
 )
 from mcp_sgu.exports import create_export as _create_export
+from mcp_sgu.filters import FilterError, add_filter, build_well_filter
 from mcp_sgu.geocoding import GeocodingError, geocode_address
 from mcp_sgu.logging_config import get_logger, set_tool_name
 from mcp_sgu.sgu_client import SGUError, get_sgu_client
@@ -55,6 +56,7 @@ async def create_export(
     set_tool_name("create_export")
 
     from mcp_sgu.config import get_settings
+
     settings = get_settings()
 
     if fmt not in ("csv", "geojson"):
@@ -68,6 +70,10 @@ async def create_export(
             "error": "conflicting_inputs",
             "detail": "Provide either 'address' or 'latitude'/'longitude', not both.",
         }
+    if (latitude is None) != (longitude is None):
+        return {"error": "invalid_coordinates", "detail": "latitude and longitude must be supplied together."}
+    if address and radius_m is None:
+        return {"error": "missing_radius", "detail": "address requires radius_m."}
 
     resolved_lat = latitude
     resolved_lon = longitude
@@ -83,50 +89,42 @@ async def create_export(
     params: dict[str, Any] = {}
 
     if radius_m and resolved_lat is not None and resolved_lon is not None:
-        min_lon, min_lat, max_lon, max_lat = radius_to_bbox(resolved_lat, resolved_lon, radius_m)
-        params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+        params["bbox"] = ",".join(map(str, wgs84_radius_to_sweref_bbox(resolved_lat, resolved_lon, radius_m)))
     elif bbox:
         params["bbox"] = ",".join(str(v) for v in bbox)
 
-    cql_parts: list[str] = []
-    if municipality_code:
-        cql_parts.append(f"kommunkod='{municipality_code}'")
-    if municipality_name:
-        cql_parts.append(f"kommunnamn ILIKE '%{municipality_name}%'")
-    if well_use_code:
-        cql_parts.append(f"anvandningskod='{well_use_code.upper()}'")
-    if min_total_depth is not None:
-        cql_parts.append(f"totaldjup>={min_total_depth}")
-    if max_total_depth is not None:
-        cql_parts.append(f"totaldjup<={max_total_depth}")
-    if min_capacity is not None:
-        cql_parts.append(f"kapacitet>={min_capacity}")
-    if max_capacity is not None:
-        cql_parts.append(f"kapacitet<={max_capacity}")
-    if position_quality_code:
-        cql_parts.append(f"positionskvalitetskod='{position_quality_code}'")
-    if drilling_date_from:
-        cql_parts.append(f"borrningsstart>='{drilling_date_from}'")
-    if drilling_date_to:
-        cql_parts.append(f"borrningsslut<='{drilling_date_to}'")
-    if cql_parts:
-        params["filter"] = " AND ".join(cql_parts)
-        params["filter-lang"] = "cql2-text"
+    try:
+        add_filter(
+            params,
+            build_well_filter(
+                municipality_code=municipality_code,
+                municipality_name=municipality_name,
+                well_use_code=well_use_code,
+                min_total_depth=min_total_depth,
+                max_total_depth=max_total_depth,
+                min_capacity=min_capacity,
+                max_capacity=max_capacity,
+                position_quality_code=position_quality_code,
+                drilling_date_from=drilling_date_from,
+                drilling_date_to=drilling_date_to,
+            ),
+        )
+    except FilterError as exc:
+        return {"error": "invalid_filter", "detail": str(exc)}
 
     params["limit"] = settings.max_export_records
 
     client = get_sgu_client()
     try:
-        features, meta = await client.get_items(
-            _COLLECTION, params, max_records=settings.max_export_records
-        )
+        features, meta = await client.get_items(_COLLECTION, params, max_records=settings.max_export_records)
     except SGUError as exc:
         return {"error": "sgu_unavailable", "detail": str(exc)}
 
     # Exact radius filtering
     if radius_m and resolved_lat is not None and resolved_lon is not None:
         features = [
-            f for f in features
+            f
+            for f in features
             if (coord := feature_coordinates(f)) is not None
             and haversine_distance_m(resolved_lat, resolved_lon, coord[0], coord[1]) <= radius_m
         ]
@@ -161,10 +159,7 @@ async def create_export(
 
     warnings: list[str] = []
     if meta.get("_truncated"):
-        warnings.append(
-            f"Export was truncated at {settings.max_export_records} records. "
-            "Results may be incomplete."
-        )
+        warnings.append(f"Export was truncated at {settings.max_export_records} records. Results may be incomplete.")
 
     return {
         **metadata,

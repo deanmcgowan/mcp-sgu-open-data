@@ -22,9 +22,9 @@ async def explain_field(
     Parameters
     ----------
     field_name:
-        The SGU source field name (e.g. ``"kapacitet"`` or ``"anvandningskod"``).
+        The SGU source field name (e.g. ``"kapacitet"`` or ``"anvandning_kod"``).
     code_value:
-        Optional code value to explain (e.g. ``"V"`` for ``anvandningskod``).
+        Optional code value to explain (e.g. ``"HUS"`` for ``anvandning_kod``).
     language:
         Response language: ``"en"`` or ``"sv"``.
     """
@@ -57,9 +57,9 @@ async def explain_field(
 
     # Code value lookup
     code_map: dict[str, dict[str, str]] | None = None
-    if defn["source_field"] == "anvandningskod":
+    if defn["source_field"] == "anvandning_kod":
         code_map = WELL_USE_CODES
-    elif defn["source_field"] == "positionskvalitetskod":
+    elif defn["source_field"] == "posvardering_kod":
         code_map = POSITION_QUALITY_CODES
 
     if code_map:
@@ -71,13 +71,9 @@ async def explain_field(
                 result["code_label_en"] = code_entry["en"]
             else:
                 result["code_value"] = code_value
-                result["code_warning"] = (
-                    f"Code '{code_value}' is not in the known code list for this field."
-                )
+                result["code_warning"] = f"Code '{code_value}' is not in the known code list for this field."
         else:
             # Return all codes
-            result["code_list"] = {
-                k: {"sv": v["sv"], "en": v["en"]} for k, v in code_map.items()
-            }
+            result["code_list"] = {k: {"sv": v["sv"], "en": v["en"]} for k, v in code_map.items()}
 
     return result
