@@ -1,0 +1,71 @@
+# Google Cloud Build configuration for SGU Brunnar MCP Server
+#
+# Usage (from Google Cloud Shell or gcloud CLI):
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions _REGION=europe-north1,_REPO=sgu-mcp,_SERVICE=sgu-brunnar-mcp .
+#
+# Required substitutions (override on the command line or set Cloud Build triggers):
+#   _REGION         — Artifact Registry region (default: europe-north1 = Stockholm)
+#   _REPO           — Artifact Registry repository name
+#   _SERVICE        — Cloud Run service name
+#   _IMAGE          — (auto-composed) Full image URI
+
+substitutions:
+  _REGION: europe-north1
+  _REPO: sgu-mcp
+  _SERVICE: sgu-brunnar-mcp
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+steps:
+  # 1. Build the container image
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - --tag
+      - ${_IMAGE}:${SHORT_SHA}
+      - --tag
+      - ${_IMAGE}:latest
+      - --cache-from
+      - ${_IMAGE}:latest
+      - .
+
+  # 2. Push both tags
+  - name: gcr.io/cloud-builders/docker
+    id: push-sha
+    waitFor: [build]
+    args: [push, "${_IMAGE}:${SHORT_SHA}"]
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    waitFor: [build]
+    args: [push, "${_IMAGE}:latest"]
+
+  # 3. Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    waitFor: [push-sha]
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --port=8080
+      - --min-instances=0
+      - --max-instances=3
+      - --memory=512Mi
+      - --cpu=1
+      - --timeout=60
+      - --set-env-vars=APP_ENV=production,LOG_LEVEL=INFO
+
+images:
+  - ${_IMAGE}:${SHORT_SHA}
+  - ${_IMAGE}:latest

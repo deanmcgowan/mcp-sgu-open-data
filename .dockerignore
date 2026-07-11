@@ -1,0 +1,46 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Development config files
+.env
+*.env
+!.env.example
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.xml
+
+# Ruff / linting
+.ruff_cache/
+
+# Editor / OS artefacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artefacts
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Temporary exports
+/tmp/
+
+# Git
+.git/
+.gitignore
