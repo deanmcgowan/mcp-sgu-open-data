@@ -13,7 +13,7 @@ def test_known_field_definition() -> None:
     assert defn["unit"] == "l/h"
     assert defn["label_en"]
     assert defn["label_sv"]
-    assert len(defn["caveats"]) > 0
+    assert defn["source_reference"]
 
 
 def test_unknown_field_returns_none() -> None:
@@ -41,14 +41,14 @@ def test_enrich_feature(sample_well_feature) -> None:
 
 
 def test_enrich_feature_use_code(sample_well_feature) -> None:
-    """Enrich feature includes code translations for anvandningskod."""
+    """Enrich feature includes code translations for anvandning_kod."""
     from mcp_sgu.field_defs import enrich_feature
 
     interpretation = enrich_feature(sample_well_feature)
-    anvandning = interpretation.get("anvandningskod")
+    anvandning = interpretation.get("anvandning_kod")
     assert anvandning is not None
-    assert anvandning["code_label_en"] == "Water supply"
-    assert "Vattenförsörjning" in anvandning["code_label_sv"]
+    assert "Private" in anvandning["code_label_en"]
+    assert "Enskild vattentäkt" in anvandning["code_label_sv"]
 
 
 def test_enrich_feature_position_quality_code(sample_well_feature) -> None:
@@ -56,9 +56,9 @@ def test_enrich_feature_position_quality_code(sample_well_feature) -> None:
     from mcp_sgu.field_defs import enrich_feature
 
     interpretation = enrich_feature(sample_well_feature)
-    pq = interpretation.get("positionskvalitetskod")
+    pq = interpretation.get("posvardering_kod")
     assert pq is not None
-    assert "GPS" in pq["code_label_sv"] or "accuracy" in pq["code_label_en"]
+    assert pq["code_label_en"] == "Maximum error <100 m"
 
 
 def test_enrich_feature_does_not_modify_original(sample_well_feature) -> None:
@@ -76,9 +76,9 @@ def test_well_use_codes_coverage() -> None:
     """Well use code list covers common codes."""
     from mcp_sgu.field_defs import WELL_USE_CODES
 
-    assert "V" in WELL_USE_CODES
-    assert "E" in WELL_USE_CODES
-    assert WELL_USE_CODES["V"]["en"] == "Water supply"
+    assert "HUS" in WELL_USE_CODES
+    assert "ENE" in WELL_USE_CODES
+    assert "Private" in WELL_USE_CODES["HUS"]["en"]
 
 
 def test_explain_field_known() -> None:
@@ -110,9 +110,9 @@ def test_explain_field_code_list() -> None:
 
     from mcp_sgu.tools.explain_field import explain_field
 
-    result = asyncio.get_event_loop().run_until_complete(explain_field("anvandningskod"))
+    result = asyncio.get_event_loop().run_until_complete(explain_field("anvandning_kod"))
     assert "code_list" in result
-    assert "V" in result["code_list"]
+    assert "HUS" in result["code_list"]
 
 
 def test_explain_field_specific_code() -> None:
@@ -121,6 +121,6 @@ def test_explain_field_specific_code() -> None:
 
     from mcp_sgu.tools.explain_field import explain_field
 
-    result = asyncio.get_event_loop().run_until_complete(explain_field("anvandningskod", code_value="E"))
-    assert result["code_label_sv"] == "Energibrunn"
-    assert "geothermal" in result["code_label_en"].lower()
+    result = asyncio.get_event_loop().run_until_complete(explain_field("anvandning_kod", code_value="ENE"))
+    assert result["code_label_sv"].startswith("Energibrunn")
+    assert "energy" in result["code_label_en"].lower()

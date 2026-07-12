@@ -79,7 +79,9 @@ async def test_export_size_limit() -> None:
     cfg_module._settings = None
 
     try:
-        features = [{"type": "Feature", "id": str(i), "geometry": None, "properties": {"brunnsid": i}} for i in range(10)]
+        features = [
+            {"type": "Feature", "id": str(i), "geometry": None, "properties": {"brunnsid": i}} for i in range(10)
+        ]
         from mcp_sgu.exports import create_export
 
         with pytest.raises(ValueError, match="MAX_EXPORT_RECORDS"):
@@ -120,5 +122,5 @@ async def test_csv_has_coordinates(sample_features) -> None:
     rows = list(reader)
     assert "longitude" in rows[0]
     assert "latitude" in rows[0]
-    assert float(rows[0]["longitude"]) == pytest.approx(18.0686)
-    assert float(rows[0]["latitude"]) == pytest.approx(59.3293)
+    assert float(rows[0]["longitude"]) == pytest.approx(18.0592, abs=0.0001)
+    assert float(rows[0]["latitude"]) == pytest.approx(59.3302, abs=0.0001)

@@ -19,9 +19,7 @@ def sgu_url(sgu_base_url: str, path: str = "") -> re.Pattern:
 
 
 @pytest.mark.asyncio
-async def test_search_wells_basic(
-    httpx_mock: HTTPXMock, sgu_base_url, sample_feature_collection
-) -> None:
+async def test_search_wells_basic(httpx_mock: HTTPXMock, sgu_base_url, sample_feature_collection) -> None:
     """search_wells returns records with interpretation."""
     httpx_mock.add_response(
         url=sgu_url(sgu_base_url, "/collections/brunnar/items"),
@@ -45,7 +43,8 @@ async def test_search_wells_basic(
     assert "feature" in record
     assert "interpretation" in record
     assert record["feature"]["properties"]["brunnsid"] == 123
-    assert result["crs"] == "EPSG:4326 (WGS84)"
+    assert result["source_crs"] == "EPSG:3006 (SWEREF 99 TM)"
+    assert result["output_crs"] == "EPSG:4326 (WGS84)"
 
 
 @pytest.mark.asyncio
@@ -80,9 +79,7 @@ async def test_search_wells_invalid_sort_direction() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_wells_radius_filter(
-    httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature
-) -> None:
+async def test_search_wells_radius_filter(httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature) -> None:
     """search_wells with radius filters out features outside the radius."""
     response = {
         "type": "FeatureCollection",
@@ -117,9 +114,7 @@ async def test_search_wells_radius_filter(
 
 
 @pytest.mark.asyncio
-async def test_search_wells_radius_excludes_distant(
-    httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature
-) -> None:
+async def test_search_wells_radius_excludes_distant(httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature) -> None:
     """search_wells with radius excludes features far from the center."""
     response = {
         "type": "FeatureCollection",
@@ -154,9 +149,7 @@ async def test_search_wells_radius_excludes_distant(
 
 
 @pytest.mark.asyncio
-async def test_get_well_by_fid(
-    httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature
-) -> None:
+async def test_get_well_by_fid(httpx_mock: HTTPXMock, sgu_base_url, sample_well_feature) -> None:
     """get_well retrieves a well by OGC feature ID."""
     httpx_mock.add_response(
         url=sgu_url(sgu_base_url, "/collections/brunnar/items/brunnar.123"),
@@ -187,9 +180,7 @@ async def test_get_well_missing_identifier() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_well_layers_basic(
-    httpx_mock: HTTPXMock, sgu_base_url, sample_layer_feature
-) -> None:
+async def test_get_well_layers_basic(httpx_mock: HTTPXMock, sgu_base_url, sample_layer_feature) -> None:
     """get_well_layers returns layer records."""
     response = {
         "type": "FeatureCollection",

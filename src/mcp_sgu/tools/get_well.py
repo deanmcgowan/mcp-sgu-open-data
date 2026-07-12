@@ -5,7 +5,9 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
+from mcp_sgu.coordinates import transform_feature_to_wgs84
 from mcp_sgu.field_defs import enrich_feature
+from mcp_sgu.filters import cql_string
 from mcp_sgu.logging_config import get_logger, set_tool_name
 from mcp_sgu.sgu_client import SGUError, SGUResponseError, get_sgu_client
 
@@ -62,7 +64,7 @@ async def get_well(
         try:
             features, _ = await client.get_items(
                 _COLLECTION,
-                {"filter": f"brunnsid={brunnsid}", "filter-lang": "cql2-text", "limit": 1},
+                {"filter": f"brunnsid={int(brunnsid)}", "filter-lang": "cql2-text", "limit": 1},
                 max_records=1,
             )
             if features:
@@ -75,7 +77,7 @@ async def get_well(
         try:
             features, _ = await client.get_items(
                 _COLLECTION,
-                {"filter": f"obsplatsid='{obsplatsid}'", "filter-lang": "cql2-text", "limit": 1},
+                {"filter": f"obsplatsid={cql_string(obsplatsid)}", "filter-lang": "cql2-text", "limit": 1},
                 max_records=1,
             )
             if features:
@@ -93,11 +95,12 @@ async def get_well(
         }
 
     result: dict[str, Any] = {
-        "feature": feature,
+        "feature": transform_feature_to_wgs84(feature),
         "interpretation": enrich_feature(feature),
         "source_collection": _COLLECTION,
         "retrieval_timestamp": _now_iso(),
-        "crs": "EPSG:4326 (WGS84)",
+        "source_crs": "EPSG:3006 (SWEREF 99 TM)",
+        "output_crs": "EPSG:4326 (WGS84)",
     }
 
     if include_layers:

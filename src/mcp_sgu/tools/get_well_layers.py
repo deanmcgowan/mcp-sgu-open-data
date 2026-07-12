@@ -6,6 +6,7 @@ import datetime
 from typing import Any
 
 from mcp_sgu.field_defs import enrich_feature
+from mcp_sgu.filters import cql_string
 from mcp_sgu.logging_config import get_logger, set_tool_name
 from mcp_sgu.sgu_client import SGUError, get_sgu_client
 
@@ -38,9 +39,9 @@ async def get_well_layers(
     client = get_sgu_client()
     cql_parts: list[str] = []
     if brunnsid is not None:
-        cql_parts.append(f"brunnsid={brunnsid}")
+        cql_parts.append(f"brunnsid={int(brunnsid)}")
     if obsplatsid:
-        cql_parts.append(f"obsplatsid='{obsplatsid}'")
+        cql_parts.append(f"obsplatsid={cql_string(obsplatsid)}")
 
     params = {
         "filter": " AND ".join(cql_parts),
@@ -63,7 +64,7 @@ async def get_well_layers(
         props = f.get("properties") or {}
         return (
             props.get("lagernr") or 9999,
-            props.get("startdjup") or 0.0,
+            props.get("djup_fran") or 0.0,
         )
 
     features_sorted = sorted(features, key=sort_key)
@@ -71,15 +72,17 @@ async def get_well_layers(
     enriched = []
     for f in features_sorted:
         props = f.get("properties") or {}
-        enriched.append({
-            "feature": f,
-            "interpretation": enrich_feature(f),
-            "layer_number": props.get("lagernr"),
-            "start_depth_m": props.get("startdjup"),
-            "end_depth_m": props.get("slutdjup"),
-            "material": props.get("jordart") or props.get("bergart"),
-            "notes": props.get("lagernotering"),
-        })
+        enriched.append(
+            {
+                "feature": f,
+                "interpretation": enrich_feature(f),
+                "layer_number": props.get("lagernr"),
+                "start_depth_m": props.get("djup_fran"),
+                "end_depth_m": props.get("djup_till"),
+                "material": props.get("jordart_bergart"),
+                "notes": props.get("lageranmarkning"),
+            }
+        )
 
     warnings: list[str] = []
     if meta.get("_truncated"):

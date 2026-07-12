@@ -78,17 +78,13 @@ class SGUClient:
                 async with self._semaphore:
                     resp = await client.get(url, params=params)
                 duration_ms = (time.monotonic() - t0) * 1000
-                log_upstream_call(
-                    logger, "sgu", url, resp.status_code, duration_ms
-                )
+                log_upstream_call(logger, "sgu", url, resp.status_code, duration_ms)
                 resp.raise_for_status()
                 return resp.json()
 
             except httpx.TimeoutException as exc:
                 duration_ms = (time.monotonic() - t0) * 1000
-                log_upstream_call(
-                    logger, "sgu", url, 0, duration_ms, error="timeout"
-                )
+                log_upstream_call(logger, "sgu", url, 0, duration_ms, error="timeout")
                 err = SGUTimeoutError(f"SGU request timed out: {url}")
                 err.__cause__ = exc
                 last_exc = err
@@ -97,23 +93,17 @@ class SGUClient:
             except httpx.HTTPStatusError as exc:
                 duration_ms = (time.monotonic() - t0) * 1000
                 status = exc.response.status_code
-                log_upstream_call(
-                    logger, "sgu", url, status, duration_ms, error="http_error"
-                )
+                log_upstream_call(logger, "sgu", url, status, duration_ms, error="http_error")
                 # 5xx are retryable; 4xx are not
                 if status < 500:
-                    raise SGUResponseError(
-                        f"SGU returned HTTP {status} for {url}"
-                    ) from exc
+                    raise SGUResponseError(f"SGU returned HTTP {status} for {url}") from exc
                 err = SGUUnavailableError(f"SGU returned HTTP {status} for {url}")
                 err.__cause__ = exc
                 last_exc = err
 
             except httpx.RequestError as exc:
                 duration_ms = (time.monotonic() - t0) * 1000
-                log_upstream_call(
-                    logger, "sgu", url, 0, duration_ms, error="request_error"
-                )
+                log_upstream_call(logger, "sgu", url, 0, duration_ms, error="request_error")
                 err = SGUUnavailableError(f"SGU request failed: {exc}")
                 err.__cause__ = exc
                 last_exc = err
@@ -178,21 +168,15 @@ class SGUClient:
         cached = await cache.get(key)
         if cached is not None:
             return cached
-        data = await self._get(
-            f"{self._base_url}/collections/{collection_id}/queryables"
-        )
+        data = await self._get(f"{self._base_url}/collections/{collection_id}/queryables")
         await cache.set(key, data, ttl=float(settings.cache_ttl_seconds))
         return data
 
     # ── Features ──────────────────────────────────────────────────────────
 
-    async def get_item(
-        self, collection_id: str, feature_id: str
-    ) -> dict[str, Any]:
+    async def get_item(self, collection_id: str, feature_id: str) -> dict[str, Any]:
         """Return a single feature by its OGC feature ID."""
-        data = await self._get(
-            f"{self._base_url}/collections/{collection_id}/items/{feature_id}"
-        )
+        data = await self._get(f"{self._base_url}/collections/{collection_id}/items/{feature_id}")
         return data
 
     async def get_items(
@@ -207,15 +191,19 @@ class SGUClient:
         Returns a tuple of (features, last_response_metadata).
         ``last_response_metadata`` contains ``numberMatched``, ``numberReturned``, links etc.
         """
-        settings = get_settings()
-        effective_max = min(max_records or settings.max_inline_results, settings.max_inline_results)
+        effective_max = max_records if max_records is not None else get_settings().max_inline_results
+        if effective_max < 1:
+            raise ValueError("max_records must be positive")
 
         params = dict(params or {})
+        next_url = params.pop("_next_url", None)
         # Enforce page size
         page_limit = min(params.get("limit", _SGU_MAX_LIMIT), _SGU_MAX_LIMIT, effective_max)
         params["limit"] = page_limit
 
-        url = f"{self._base_url}/collections/{collection_id}/items"
+        url = next_url or f"{self._base_url}/collections/{collection_id}/items"
+        if next_url:
+            params = None
         all_features: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         last_response: dict[str, Any] = {}
@@ -253,7 +241,11 @@ class SGUClient:
 
             # Follow OGC next link
             next_url = _extract_next_link(data.get("links", []))
-            if not next_url or next_url in seen_next_links:
+            if not next_url:
+                break
+            if next_url in seen_next_links:
+                last_response["_truncated"] = True
+                last_response["_truncation_reason"] = "repeated_next_link"
                 break
             seen_next_links.add(next_url)
             url = next_url
